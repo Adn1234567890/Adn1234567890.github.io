@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AnkiDroid Flashcard System by ADN</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .flashcard {
+            height: 300px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 20px 0;
+            padding: 20px;
+            font-size: 24px;
+            text-align: center;
+            background-color: #f9f9f9;
+            cursor: pointer;
+            perspective: 1000px;
+            position: relative;
+            transform-style: preserve-3d;
+            transition: transform 0.6s;
+        }
+        .flashcard.flipped {
+            transform: rotateY(180deg);
+        }
+        .flashcard-front, .flashcard-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .flashcard-back {
+            transform: rotateY(180deg);
+            background-color: #e6f7ff;
+        }
+        .controls {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        .easy {
+            background-color: #4CAF50;
+            color: white;
+        }
+        .good {
+            background-color: #2196F3;
+            color: white;
+        }
+        .hard {
+            background-color: #FF9800;
+            color: white;
+        }
+        .again {
+            background-color: #f44336;
+            color: white;
+        }
+        .add-card {
+            background-color: #9C27B0;
+            color: white;
+            margin-top: 20px;
+            width: 100%;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        .hidden {
+            display: none;
+        }
+        .stats {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #666;
+        }
+        .deck-selector {
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Web AnkiDroid Flashcard System By ADN</h1>
+        
+        <div class="deck-selector">
+            <label for="deck-select">Select Deck:</label>
+            <select id="deck-select" onchange="loadDeck()">
+                <option value="default">Default Deck</option>
+            </select>
+            <button onclick="showAddDeckForm()">+ New Deck</button>
+        </div>
+        
+        <div id="add-deck-form" class="hidden">
+            <div class="form-group">
+                <label for="new-deck-name">Deck Name:</label>
+                <input type="text" id="new-deck-name" placeholder="Enter deck name">
+            </div>
+            <button onclick="addNewDeck()">Create Deck</button>
+            <button onclick="hideAddDeckForm()">Cancel</button>
+        </div>
+        
+        <div id="flashcard-container">
+            <div class="flashcard" onclick="flipCard()" id="flashcard">
+                <div class="flashcard-front" id="front">
+                    No cards in this deck. Add some cards to get started!
+                </div>
+                <div class="flashcard-back" id="back">
+                    Back side of the card
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button class="again" onclick="rateCard(0)">Again</button>
+                <button class="hard" onclick="rateCard(1)">Hard</button>
+                <button class="good" onclick="rateCard(2)">Good</button>
+                <button class="easy" onclick="rateCard(3)">Easy</button>
+            </div>
+            
+            <div class="stats">
+                Cards remaining today: <span id="remaining">0</span> |
+                Total cards: <span id="total-cards">0</span>
+            </div>
+        </div>
+        
+        <button class="add-card" onclick="showAddCardForm()">+ Add New Card</button>
+        
+        <div id="add-card-form" class="hidden">
+            <div class="form-group">
+                <label for="card-front">Front (Question):</label>
+                <textarea id="card-front" rows="3" placeholder="Enter question or term"></textarea>
+            </div>
+            <div class="form-group">
+                <label for="card-back">Back (Answer):</label>
+                <textarea id="card-back" rows="3" placeholder="Enter answer or definition"></textarea>
+            </div>
+            <button onclick="addNewCard()">Add Card</button>
+            <button onclick="hideAddCardForm()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        // Database of decks and cards
+        let decks = {
+            'default': {
+                name: 'Default Deck',
+                cards: [],
+                newCards: [],
+                reviewCards: [],
+                currentCardIndex: -1,
+                stats: {
+                    total: 0,
+                    due: 0
+                }
+            }
+        };
+        
+        let currentDeck = 'default';
+        let isFlipped = false;
+        
+        // Initialize the app
+        function init() {
+            loadFromLocalStorage();
+            updateDeckSelector();
+            loadDeck();
+        }
+        
+        // Load data from localStorage
+        function loadFromLocalStorage() {
+            const savedData = localStorage.getItem('ankiDecks');
+            if (savedData) {
+                decks = JSON.parse(savedData);
+            }
+        }
+        
+        // Save data to localStorage
+        function saveToLocalStorage() {
+            localStorage.setItem('ankiDecks', JSON.stringify(decks));
+        }
+        
+        // Update deck selector dropdown
+        function updateDeckSelector() {
+            const select = document.getElementById('deck-select');
+            select.innerHTML = '';
+            
+            for (const deckId in decks) {
+                const option = document.createElement('option');
+                option.value = deckId;
+                option.textContent = decks[deckId].name;
+                select.appendChild(option);
+            }
+        }
+        
+        // Load a deck
+        function loadDeck() {
+            const select = document.getElementById('deck-select');
+            currentDeck = select.value;
+            
+            if (!decks[currentDeck]) {
+                decks[currentDeck] = {
+                    name: currentDeck,
+                    cards: [],
+                    newCards: [],
+                    reviewCards: [],
+                    currentCardIndex: -1,
+                    stats: {
+                        total: 0,
+                        due: 0
+                    }
+                };
+                saveToLocalStorage();
+            }
+            
+            // For simplicity, we'll just use all cards for this demo
+            // In a real implementation, you'd separate new cards and review cards
+            decks[currentDeck].reviewCards = [...decks[currentDeck].cards];
+            decks[currentDeck].stats.total = decks[currentDeck].cards.length;
+            decks[currentDeck].stats.due = decks[currentDeck].reviewCards.length;
+            
+            updateStats();
+            showNextCard();
+        }
+        
+        // Show the next card
+        function showNextCard() {
+            const deck = decks[currentDeck];
+            
+            if (deck.reviewCards.length === 0) {
+                document.getElementById('front').textContent = 'No more cards to review!';
+                document.getElementById('back').textContent = 'Add more cards or come back tomorrow.';
+                document.getElementById('flashcard').classList.remove('flipped');
+                isFlipped = false;
+                deck.currentCardIndex = -1;
+                return;
+            }
+            
+            deck.currentCardIndex = Math.floor(Math.random() * deck.reviewCards.length);
+            const card = deck.reviewCards[deck.currentCardIndex];
+            
+            document.getElementById('front').textContent = card.front;
+            document.getElementById('back').textContent = card.back;
+            document.getElementById('flashcard').classList.remove('flipped');
+            isFlipped = false;
+        }
+        
+        // Flip the card
+        function flipCard() {
+            const flashcard = document.getElementById('flashcard');
+            isFlipped = !isFlipped;
+            flashcard.classList.toggle('flipped', isFlipped);
+        }
+        
+        // Rate the card (Anki's SRS algorithm simplified)
+        function rateCard(rating) {
+            const deck = decks[currentDeck];
+            if (deck.currentCardIndex === -1) return;
+            
+            const card = deck.reviewCards[deck.currentCardIndex];
+            
+            // Simplified SRS - in a real app, you'd implement proper spaced repetition
+            if (rating === 0) { // Again
+                // Card will be shown again soon
+                card.due = new Date(Date.now() + 60000).toISOString(); // 1 minute
+            } else if (rating === 1) { // Hard
+                card.due = new Date(Date.now() + 86400000).toISOString(); // 1 day
+                deck.reviewCards.splice(deck.currentCardIndex, 1);
+            } else if (rating === 2) { // Good
+                card.due = new Date(Date.now() + 259200000).toISOString(); // 3 days
+                deck.reviewCards.splice(deck.currentCardIndex, 1);
+            } else if (rating === 3) { // Easy
+                card.due = new Date(Date.now() + 604800000).toISOString(); // 7 days
+                deck.reviewCards.splice(deck.currentCardIndex, 1);
+            }
+            
+            // Update stats
+            deck.stats.due = deck.reviewCards.length;
+            updateStats();
+            saveToLocalStorage();
+            
+            // Show next card
+            showNextCard();
+        }
+        
+        // Update statistics display
+        function updateStats() {
+            const deck = decks[currentDeck];
+            document.getElementById('remaining').textContent = deck.stats.due;
+            document.getElementById('total-cards').textContent = deck.stats.total;
+        }
+        
+        // Show add card form
+        function showAddCardForm() {
+            document.getElementById('add-card-form').classList.remove('hidden');
+            document.getElementById('card-front').value = '';
+            document.getElementById('card-back').value = '';
+            document.getElementById('card-front').focus();
+        }
+        
+        // Hide add card form
+        function hideAddCardForm() {
+            document.getElementById('add-card-form').classList.add('hidden');
+        }
+        
+        // Add a new card
+        function addNewCard() {
+            const front = document.getElementById('card-front').value.trim();
+            const back = document.getElementById('card-back').value.trim();
+            
+            if (!front || !back) {
+                alert('Please enter both front and back of the card');
+                return;
+            }
+            
+            const newCard = {
+                front: front,
+                back: back,
+                created: new Date().toISOString(),
+                due: new Date().toISOString()
+            };
+            
+            decks[currentDeck].cards.push(newCard);
+            decks[currentDeck].reviewCards.push(newCard);
+            decks[currentDeck].stats.total = decks[currentDeck].cards.length;
+            decks[currentDeck].stats.due = decks[currentDeck].reviewCards.length;
+            
+            saveToLocalStorage();
+            updateStats();
+            hideAddCardForm();
+            showNextCard();
+        }
+        
+        // Show add deck form
+        function showAddDeckForm() {
+            document.getElementById('add-deck-form').classList.remove('hidden');
+            document.getElementById('new-deck-name').value = '';
+            document.getElementById('new-deck-name').focus();
+        }
+        
+        // Hide add deck form
+        function hideAddDeckForm() {
+            document.getElementById('add-deck-form').classList.add('hidden');
+        }
+        
+        // Add a new deck
+        function addNewDeck() {
+            const deckName = document.getElementById('new-deck-name').value.trim();
+            
+            if (!deckName) {
+                alert('Please enter a deck name');
+                return;
+            }
+            
+            const deckId = deckName.toLowerCase().replace(/\s+/g, '-');
+            
+            if (decks[deckId]) {
+                alert('A deck with this name already exists');
+                return;
+            }
+            
+            decks[deckId] = {
+                name: deckName,
+                cards: [],
+                newCards: [],
+                reviewCards: [],
+                currentCardIndex: -1,
+                stats: {
+                    total: 0,
+                    due: 0
+                }
+            };
+            
+            saveToLocalStorage();
+            updateDeckSelector();
+            document.getElementById('deck-select').value = deckId;
+            hideAddDeckForm();
+            loadDeck();
+        }
+        
+        // Initialize the app when page loads
+        window.onload = init;
+    </script>
+</body>
+</html>
